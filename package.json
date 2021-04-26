@@ -1,0 +1,23 @@
+{
+  "name": "stimsrv-slippymap",
+  "version": "0.0.1",
+  "description": "\"Slippy Map\" (interactive pan + zoom map) for stimsrv experiments",
+  "main": "slippymap.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/floledermann/stimsrv-slippymap.git"
+  },
+  "author": "Florian Ledermann <florian.ledermann@tuwien.ac.at>",
+  "license": "AGPL-3.0-or-later",
+  "bugs": {
+    "url": "https://github.com/floledermann/stimsrv-slippymap/issues"
+  },
+  "homepage": "https://github.com/floledermann/stimsrv-slippymap#readme",
+  "dependencies": {
+    "leaflet": "1.7.1",
+    "stimsrv": "0.0.1"
+  }
+}
