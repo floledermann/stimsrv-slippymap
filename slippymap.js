@@ -6,7 +6,7 @@ const resource = require("stimsrv/util/resource");
 
 let pick = require("stimsrv/util/pickProperties");
 
-// I don't see an easy way to get those programmatically, so extracted all options from Leaflet docs
+// I don't see an easy way to get those programmatically, so extracted all map options from Leaflet docs
 const leafletMapOptions = [
   "attributionControl","zoomControl","closePopupOnClick","zoomSnap","zoomDelta",
   "boxZoom","doubleClickZoom","dragging","crs","minZoom","maxZoom","maxBounds",
