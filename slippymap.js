@@ -18,9 +18,18 @@ const leafletMapOptions = [
 
 let slippyMapRenderer = function(config) {
   
+  config = Object.assign({
+    synchronize: false,
+    synchronizeView: "centerZoom", // "bounds"
+    interaction: true
+  }, config);
+  
   // Leaflet reference
   let L = null;
   let map = null;
+  
+  let duringSync = false;
+  let duringMovement = false;
   
   return {
     initialize: function(parent, stimsrv, context) {
@@ -61,11 +70,69 @@ let slippyMapRenderer = function(config) {
         map.setZoom(config.initialZoom);
       }
       
-      // Leaflet is really sensitive to order of zoom/pan commands
+      // Leaflet is sensitive to order of zoom/pan commands
       // to test see http://jsfiddle.net/sx5gtwa7/3/
       let initialPosition = valOrFunc(config.initialPosition, context);
       if (initialPosition && Array.isArray(initialPosition)) {
         map.setView(config.initialPosition);
+      }
+      
+      if (config.synchronize) {
+        
+        function sendMapSyncEvent() {
+          let data = null;
+          if (config.synchronizeView == "bounds") {
+            let bounds = map.getBounds();
+            data = {
+              bounds: [[bounds.getNorth(), bounds.getEast()],[bounds.getSouth(), bounds.getWest()]]
+            };
+          }
+          else {
+            let pos = map.getCenter();
+            data = {
+              center: {lat: pos.lat, lng: pos.lng},
+              zoom: map.getZoom()
+            };
+          }
+          
+          stimsrv.event("mapmove", data);
+        }
+        
+        // Leaflet events fire liberally also during programmatically triggered changes
+        // not sure how to best detect real user interaction
+        // TODO: check for touch devices
+        let lastUpdateTime = 0;
+        map.on("mousedown", function(event) {
+          //console.log("MOUSEDOWN");
+          duringMovement = true;
+        });
+        map.on("movestart", function(event) {
+          console.log("MOVESTART");
+        });
+        map.on("move", function(event) {
+          console.log("MOVE");
+          if (duringMovement && !duringSync && Date.now() - lastUpdateTime > 100) {
+            sendMapSyncEvent();
+            lastUpdateTime = Date.now();
+          }
+        });
+        map.on("moveend", function(event) {
+          console.log("MOVEEND");
+          if (duringMovement && !duringSync) {
+            sendMapSyncEvent();
+          }
+        });
+        map.on("zoomend", function(event) {
+          console.log("ZOOMEND");
+          if (!duringSync) {
+            sendMapSyncEvent();
+          }
+        });
+        map.on("mouseup", function(event) {
+          console.log("MOUSEUP");
+          setTimeout(() => { duringMovement = false; }, 1);
+        });
+
       }
       
     },
@@ -79,6 +146,21 @@ let slippyMapRenderer = function(config) {
       }
       
       console.log("Centering map on " + condition.initialPosition);
+    },
+    event: function(type, data) {
+      if (config.synchronize && type == "mapmove") {
+        if (!duringSync && !duringMovement) {
+          duringSync = true;
+          if (data.bounds) {
+            map.on("moveend", () => { duringSync = false; });
+            map.fitBounds(data.bounds); //, {animate: false});
+          }
+          if (data.center && data.zoom) {
+            map.on("moveend", () => { duringSync = false; });
+            map.setView(data.center, data.zoom); //, {animate: false});
+          }
+        }
+      }
     },
     getMap: () => map,
     resources: resource("slippymap", "resources", __dirname)
@@ -116,7 +198,10 @@ function slippyMapTask(config) {
           response: null,
           monitor: renderer,
           control: null,
-        }
+        },
+        event: function(type, data) {
+          renderer.event(type, data);
+        },
       }
     },
     controller: parameterController({parameters: config}),
