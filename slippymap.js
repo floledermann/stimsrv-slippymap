@@ -48,7 +48,7 @@ let slippyMapRenderer = function(config) {
       parent.appendChild(mapEl);
       
       let mapOptions = pick(config, leafletMapOptions);
-      if (config.interaction === false) {
+      if (!valOrFunc(config.interaction, context)) {
         Object.assign(mapOptions, {
           boxZoom: false,
           doubleClickZoom: false,
