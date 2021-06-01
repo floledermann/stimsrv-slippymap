@@ -206,10 +206,7 @@ function slippyMapTask(config) {
           response: null,
           monitor: renderer,
           control: null,
-        },
-        event: function(type, data) {
-          renderer.event(type, data);
-        },
+        }
       }
     },
     controller: parameterController({parameters: config}),
