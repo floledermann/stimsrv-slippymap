@@ -98,42 +98,44 @@ let slippyMapRenderer = function(config) {
           stimsrv.event("mapmove", data);
         }
         
+        const debugui = false;
+        
         // Leaflet events fire liberally also during programmatically triggered changes
         // not sure how to best detect real user interaction
         let lastUpdateTime = 0;
         // this does not work on the map, use DOM element instead
         mapEl.addEventListener("touchstart", function(event) {
-          console.log("TOUCHSTART");
+          if (debugui) console.log("TOUCHSTART");
           duringUserMovement = true;
         });
         map.on("mousedown", function(event) {
-          console.log("MOUSEDOWN");
+          if (debugui) console.log("MOUSEDOWN");
           duringUserMovement = true;
         });
         map.on("movestart", function(event) {
-          console.log("MOVESTART");
+          if (debugui) console.log("MOVESTART");
         });
         map.on("move", function(event) {
-          console.log("MOVE");
+          if (debugui) console.log("MOVE");
           if (duringUserMovement && !sync.ongoing && Date.now() - lastUpdateTime > 100) {
             sendMapSyncEvent();
             lastUpdateTime = Date.now();
           }
         });
         map.on("moveend", function(event) {
-          console.log("MOVEEND");
+          if (debugui) console.log("MOVEEND");
           if (duringUserMovement && !sync.ongoing) {
             sendMapSyncEvent();
           }
         });
         map.on("zoomend", function(event) {
-          console.log("ZOOMEND");
+          if (debugui) console.log("ZOOMEND");
           if (!sync.ongoing) {
             sendMapSyncEvent();
           }
         });
         map.on("mouseup", function(event) {
-          console.log("MOUSEUP");
+          if (debugui) console.log("MOUSEUP");
           duringUserMovement = false;
         });
 
