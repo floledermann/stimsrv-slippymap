@@ -28,8 +28,8 @@ let slippyMapRenderer = function(config) {
   let L = null;
   let map = null;
   
-  let duringSync = false;
-  let duringMovement = false;
+  let sync = {ongoing: false};
+  let duringUserMovement = false;
   
   return {
     initialize: function(parent, stimsrv, context) {
@@ -100,37 +100,41 @@ let slippyMapRenderer = function(config) {
         
         // Leaflet events fire liberally also during programmatically triggered changes
         // not sure how to best detect real user interaction
-        // TODO: check for touch devices
         let lastUpdateTime = 0;
+        // this does not work on the map, use DOM element instead
+        mapEl.addEventListener("touchstart", function(event) {
+          console.log("TOUCHSTART");
+          duringUserMovement = true;
+        });
         map.on("mousedown", function(event) {
-          //console.log("MOUSEDOWN");
-          duringMovement = true;
+          console.log("MOUSEDOWN");
+          duringUserMovement = true;
         });
         map.on("movestart", function(event) {
           console.log("MOVESTART");
         });
         map.on("move", function(event) {
           console.log("MOVE");
-          if (duringMovement && !duringSync && Date.now() - lastUpdateTime > 100) {
+          if (duringUserMovement && !sync.ongoing && Date.now() - lastUpdateTime > 100) {
             sendMapSyncEvent();
             lastUpdateTime = Date.now();
           }
         });
         map.on("moveend", function(event) {
           console.log("MOVEEND");
-          if (duringMovement && !duringSync) {
+          if (duringUserMovement && !sync.ongoing) {
             sendMapSyncEvent();
           }
         });
         map.on("zoomend", function(event) {
           console.log("ZOOMEND");
-          if (!duringSync) {
+          if (!sync.ongoing) {
             sendMapSyncEvent();
           }
         });
         map.on("mouseup", function(event) {
           console.log("MOUSEUP");
-          setTimeout(() => { duringMovement = false; }, 1);
+          duringUserMovement = false;
         });
 
       }
@@ -149,14 +153,16 @@ let slippyMapRenderer = function(config) {
     },
     event: function(type, data) {
       if (config.synchronize && type == "mapmove") {
-        if (!duringSync && !duringMovement) {
-          duringSync = true;
+        if (!duringUserMovement) {
+          // store local copy in closure, to ensure that only last event can reset globally
+          sync = {ongoing: true};
+          let _sync = sync;
           if (data.bounds) {
-            map.on("moveend", () => { duringSync = false; });
+            map.on("moveend", () => { _sync.ongoing = false; });
             map.fitBounds(data.bounds); //, {animate: false});
           }
           if (data.center && data.zoom) {
-            map.on("moveend", () => { duringSync = false; });
+            map.on("moveend", () => { _sync.ongoing = false; });
             map.setView(data.center, data.zoom); //, {animate: false});
           }
         }
