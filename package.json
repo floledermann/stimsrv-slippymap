@@ -18,6 +18,6 @@
   "homepage": "https://github.com/floledermann/stimsrv-slippymap#readme",
   "dependencies": {
     "leaflet": "1.7.1",
-    "stimsrv": "0.0.6"
+    "stimsrv": "0.0.7"
   }
 }
