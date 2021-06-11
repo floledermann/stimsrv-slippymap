@@ -1,10 +1,40 @@
 
-const parameterController = require("stimsrv/controller/parameterController");
+const nextOnResponse = require("stimsrv/controller/nextOnResponse");
 const valOrFunc = require("stimsrv/util/valOrFunc");
 
 const resource = require("stimsrv/util/resource");
 
 let pick = require("stimsrv/util/pickProperties");
+
+const DEFAULTS = {
+  name: "slippymap",          // task name
+  description: "Interactive (slippy) map",
+  tiles: null,                // tiles must be specified by experiment!
+  initialPosition: [0,0],     // array or f(context)
+  initialZoom: 6,             // number or f(context)
+  initialBounds: null,        // if defined, takes precedence over initialPosition and initialZoom, array or f(context)
+  initialBoundsOptions: {animate: false}, // object or f(context)
+  minZoom: 0,                 // number or f(context)
+  maxZoom: 20,                // number or f(context)
+  interaction: true,          // bool or f(context)
+  synchronize: false,         // bool or f(context)
+  synchronizeMode: "centerZoom", // "centerZoom" or "bounds"
+  synchronizeEventType: "mapmove",
+  mapInterfaces: ["display","monitor"], // interfaces to show the map on, array or f(context)
+  auxInterfaces: {},                    // further interfaces to show, object or f(context)
+  leafletOptions: {}, // options passed to leaflet, object or f(context)
+  // callback functions
+  // each of those will be called with "map" and "context" as additional parameters
+  // after internal handling (setup of map, map synchronization)
+  initialize: null, // (parent, stimsrv, map, context) => {...}
+  render: null,     // (condition, map, context) => {...}
+  event: null,      // (type, data, map, context) => {...}
+  controller: nextOnResponse(),
+}
+
+const taskContextKeys = ["mapInterfaces","auxInterfaces"];
+const rendererContextKeys = ["tiles","initialZoom","initialPosition","initialBounds","initialBoundsOptions","minZoom","maxZoom","interaction","synchronize","leafletOptions"];
+
 
 // I don't see an easy way to get those programmatically, so extracted all map options from Leaflet docs
 const leafletMapOptions = [
@@ -14,15 +44,17 @@ const leafletMapOptions = [
   "inertia","inertiaDeceleration","inertiaMaxSpeed","easeLinearity","maxBoundsViscosity",
   "keyboard","keyboardPanDelta","scrollWheelZoom","wheelDebounceTime","wheelPxPerZoomLevel",
   "tap","tapTolerance","touchZoom","bounceAtZoomLimits"
-]
+];
 
-let slippyMapRenderer = function(config) {
+let resources = resource("slippymap", "resources", __dirname);
+
+let slippyMapRenderer = function(config, context) {
   
-  config = Object.assign({
-    synchronize: false,
-    synchronizeView: "centerZoom", // "bounds"
-    interaction: true
-  }, config);
+  config = valOrFunc.properties(Object.assign({}, DEFAULTS, config), rendererContextKeys, context);
+  
+  if (!(config.tiles?.tileURL)) {
+    throw new Error("Slippymap renderer: config.tiles.tileURL must be specified!");
+  }
   
   // Leaflet reference
   let L = null;
@@ -32,7 +64,7 @@ let slippyMapRenderer = function(config) {
   let duringUserMovement = false;
   
   return {
-    initialize: function(parent, stimsrv, context) {
+    initialize: function(parent, stimsrv) {
       
       if (!L) L = require("leaflet");
       
@@ -47,8 +79,8 @@ let slippyMapRenderer = function(config) {
       mapEl.style.height = "100%";
       parent.appendChild(mapEl);
       
-      let mapOptions = pick(config, leafletMapOptions);
-      if (!valOrFunc(config.interaction, context)) {
+      let mapOptions = Object.assign({}, config.leafletOptions); //pick(config, leafletMapOptions);
+      if (!config.interaction) {
         Object.assign(mapOptions, {
           boxZoom: false,
           doubleClickZoom: false,
@@ -65,23 +97,26 @@ let slippyMapRenderer = function(config) {
       
       map.attributionControl.setPrefix("");
             
-      let zoom = valOrFunc(config.initialZoom, context);
-      if (zoom && typeof zoom == "number") {
-        map.setZoom(config.initialZoom);
+      if (config.initialBounds) {
+        map.fitBounds(config.initialBounds, config.initialBoundsOptions);
       }
-      
-      // Leaflet is sensitive to order of zoom/pan commands
-      // to test see http://jsfiddle.net/sx5gtwa7/3/
-      let initialPosition = valOrFunc(config.initialPosition, context);
-      if (initialPosition && Array.isArray(initialPosition)) {
-        map.setView(config.initialPosition);
+      else {
+        // Leaflet is sensitive to order of zoom/pan commands
+        // to test see http://jsfiddle.net/sx5gtwa7/3/
+        if (config.initialZoom && typeof config.initialZoom == "number") {
+          map.setZoom(config.initialZoom);
+        }
+        
+        if (config.initialPosition && Array.isArray(config.initialPosition)) {
+          map.setView(config.initialPosition);
+        }
       }
       
       if (config.synchronize) {
         
         function sendMapSyncEvent() {
           let data = null;
-          if (config.synchronizeView == "bounds") {
+          if (config.synchronizeMode == "bounds") {
             let bounds = map.getBounds();
             data = {
               bounds: [[bounds.getNorth(), bounds.getEast()],[bounds.getSouth(), bounds.getWest()]]
@@ -95,11 +130,13 @@ let slippyMapRenderer = function(config) {
             };
           }
           
-          stimsrv.event("mapmove", data);
+          stimsrv.event(config.synchronizeEventType, data);
         }
         
         const debugui = false;
         
+        let duringWheel = false;
+                
         // Leaflet events fire liberally also during programmatically triggered changes
         // not sure how to best detect real user interaction
         let lastUpdateTime = 0;
@@ -107,6 +144,11 @@ let slippyMapRenderer = function(config) {
         mapEl.addEventListener("touchstart", function(event) {
           if (debugui) console.log("TOUCHSTART");
           duringUserMovement = true;
+        });
+        mapEl.addEventListener("wheel", function(event) {
+          if (debugui) console.log("TOUCHSTART");
+          duringUserMovement = true;
+          duringWheel = true;
         });
         map.on("mousedown", function(event) {
           if (debugui) console.log("MOUSEDOWN");
@@ -130,31 +172,52 @@ let slippyMapRenderer = function(config) {
         });
         map.on("zoomend", function(event) {
           if (debugui) console.log("ZOOMEND");
-          if (!sync.ongoing) {
+          if (duringUserMovement && !sync.ongoing) {
             sendMapSyncEvent();
+          }
+          if (duringWheel) {
+            // wait until after listeners have been completed
+            setTimeout(() => {
+              duringWheel = false;
+              duringUserMovement = false;
+            }, 1);
           }
         });
         map.on("mouseup", function(event) {
           if (debugui) console.log("MOUSEUP");
           duringUserMovement = false;
         });
+        
+        map.addUserEventListener = function(type, callback) {
+          map.addEventListener(type, function(event) {
+            if (duringUserMovement && !sync.ongoing) {
+              callback(event);
+            }
+          });
+        }
 
       }
+      
+      if (config.initialize) config.initialize(parent, stimsrv, map, context);
       
     },
     render: function(condition) {
       
-      if (condition.initialPosition) {
-        map.setView(condition.initialPosition, condition.initialZoom); 
+      if (config.render) {
+        config.render(condition, map, context);
       }
-      else if (condition.initialZoom) {
-        map.setZoom(condition.initialZoom);
+      else {
+        if (condition.mapPosition) {
+          map.setView(condition.mapCenter, condition.mapZoom); 
+        }
+        else if (condition.mapZoom) {
+          map.setZoom(condition.mapZoom);
+        }
       }
-      
-      console.log("Centering map on " + condition.initialPosition);
+      //console.log("Centering map on " + condition.initialPosition);
     },
     event: function(type, data) {
-      if (config.synchronize && type == "mapmove") {
+      if (config.synchronize && type == config.synchronizeEventType) {
         if (!duringUserMovement) {
           // store local copy in closure, to ensure that only last event can reset globally
           sync = {ongoing: true};
@@ -169,48 +232,38 @@ let slippyMapRenderer = function(config) {
           }
         }
       }
+      
+      if (config.event) config.event(type, data, map, context);
     },
     getMap: () => map,
-    resources: resource("slippymap", "resources", __dirname)
+    resources: resources
   }
 }
 
-
-const DEFAULTS = {
-  tiles: null, // tiles must be specified by experiment
-  minZoom: 0,
-  maxZoom: 20,
-  initialPosition: [0,0],
-  initialZoom: 6,
-}
 
 function slippyMapTask(config) {
   
   config = Object.assign({}, DEFAULTS, config);
-  // do we want to use separate parameters object?
-  //config.parameters = Object.assign({}, DEFAULTS.parameters, config.parameters);
-  
-  if (!(config.tiles?.tileURL)) {
-    console.error("Slippymap task: config.tiles.tileURL must be specified!");
-  }
 
-  let renderer = slippyMapRenderer(config);
-  
   return {
-    name: "slippymap",
-    description: "Interactive (slippy) map",
+    name: config.name,
+    description: config.description,
     ui: function(context) {
-      return {
-        interfaces: {
-          display: renderer,
-          response: null,
-          monitor: renderer,
-          control: null,
-        }
+      
+      config = valOrFunc.properties(config, taskContextKeys, context);
+      
+      let renderer = slippyMapRenderer(config, context);
+      
+      let uis = valOrFunc(config.auxInterfaces, context);
+      for (let ui of valOrFunc(config.mapInterfaces, context)) {
+        uis[ui] = renderer;
       }
+      return {
+        interfaces: uis
+      };
     },
-    controller: parameterController({parameters: config}),
-    resources: renderer.resources
+    controller: config.controller,
+    resources: resources
   }
 }
 
