@@ -248,7 +248,7 @@ function slippyMapTask(config) {
   return {
     name: config.name,
     description: config.description,
-    ui: function(context) {
+    frontend: context => {
       
       config = valOrFunc.properties(config, taskContextKeys, context);
       
