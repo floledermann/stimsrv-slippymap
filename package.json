@@ -1,6 +1,6 @@
 {
   "name": "stimsrv-task-slippymap",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "\"Slippy Map\" (interactive pan + zoom map) for stimsrv experiments",
   "main": "slippymap.js",
   "scripts": {
